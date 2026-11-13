@@ -1,0 +1,34 @@
+# Dependensi Node.js
+node_modules/
+
+# File konfigurasi & API Key rahasia (JANGAN DI-COMMIT)
+.env
+.env.local
+.env.*.local
+
+# Database lokal SQLite (berisi riwayat chat pribadi)
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/*.sqlite
+data/*.sqlite3
+
+# File unggahan
+uploads/*
+!uploads/.gitkeep
+
+# Log & cache runtime
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# File sistem operasi & IDE / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
