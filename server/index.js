@@ -163,6 +163,12 @@ app.post('/api/chat', async (req, res) => {
   for (const a of attRows) (attByMsg[a.message_id] ||= []).push(a);
 
   const adapterMessages = [];
+  if (config.systemPrompt) {
+    adapterMessages.push({
+      role: 'system',
+      parts: [{ type: 'text', text: config.systemPrompt }],
+    });
+  }
   for (const m of messages) {
     if (regenerate && m.id === userMsgId) continue; // user msg terakhir akan dibangun ulang di bawah
     const parts = await buildParts(m, attByMsg[m.id] || [], provider);
