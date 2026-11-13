@@ -57,20 +57,55 @@ const md = window.markdownit({
 });
 
 function renderMarkdown(text) {
-  const div = document.createElement('div');
-  div.innerHTML = md.render(text);
-  if (window.renderMathInElement) {
-    window.renderMathInElement(div, {
-      delimiters: [
-        { left: '$$', right: '$$', display: true },
-        { left: '$', right: '$', display: false },
-        { left: '\\(', right: '\\)', display: false },
-        { left: '\\[', right: '\\]', display: true }
-      ],
-      throwOnError: false
-    });
-  }
-  return div.innerHTML;
+  const codeBlocks = [];
+  const mathBlocks = [];
+
+  const saveMath = (tex, display) => {
+    const id = `@@MATH_${mathBlocks.length}@@`;
+    mathBlocks.push({ tex: tex.trim(), display });
+    return id;
+  };
+
+  // 1. Amankan blok kode (```...``` dan `...`) terlebih dahulu
+  let processed = text.replace(/```[\s\(\S\)]*?```|`[^`\n]+`/g, (match) => {
+    const id = `@@CODE_${codeBlocks.length}@@`;
+    codeBlocks.push(match);
+    return id;
+  });
+
+  // 2. Ekstrak blok matematika display ($$ ... $$ dan \[ ... \]) SEBELUM menyentuh kurung biasa
+  processed = processed
+    .replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => saveMath(tex, true))
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_, tex) => saveMath(tex, true))
+    .replace(/^\[\s*\n?([\s\S]*?\\[\s\S]*?)\n?\s*\]$/gm, (_, tex) => saveMath(tex, true));
+
+  // 3. Ekstrak matematika inline ($ ... $ dan \( ... \))
+  processed = processed
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_, tex) => saveMath(tex, false))
+    .replace(/\$([^\n$]+?)\$/g, (_, tex) => saveMath(tex, false))
+    .replace(/\(\s*(\\[a-zA-Z]+[^()\n]*)\s*\)/g, (_, tex) => saveMath(tex, false));
+
+  // 4. Kembalikan blok kode agar di-highlight oleh markdown-it + highlight.js
+  processed = processed.replace(/@@CODE_(\d+)@@/g, (_, i) => codeBlocks[Number(i)]);
+
+  // 5. Render Markdown menjadi HTML
+  let html = md.render(processed);
+
+  // 6. Render semua rumus matematika menggunakan KaTeX
+  html = html.replace(/@@MATH_(\d+)@@/g, (_, i) => {
+    const item = mathBlocks[Number(i)];
+    if (!item || !window.katex) return '';
+    try {
+      return window.katex.renderToString(item.tex, {
+        displayMode: item.display,
+        throwOnError: false,
+      });
+    } catch {
+      return item.tex;
+    }
+  });
+
+  return html;
 }
 
 // ═══════════ Util ═══════════
@@ -505,11 +540,20 @@ async function sendMessage({ regenerate = false } = {}) {
   updateSendState();
 
   let streamText = '';
+  let renderTimer = null;
+
+  const flushRender = () => {
+    renderTimer = null;
+    contentEl.innerHTML = renderMarkdown(streamText);
+    scrollToBottom();
+  };
+
   const appendDelta = (t) => {
     if (!streamText) typing.remove();
     streamText += t;
-    contentEl.innerHTML = renderMarkdown(streamText);
-    scrollToBottom();
+    if (!renderTimer) {
+      renderTimer = setTimeout(flushRender, 80);
+    }
   };
 
   try {
@@ -554,10 +598,18 @@ async function sendMessage({ regenerate = false } = {}) {
         }
       }
     }
+    if (renderTimer) {
+      clearTimeout(renderTimer);
+      flushRender();
+    }
     if (!streamText) {
       contentEl.innerHTML = '<em style="color:var(--text-dim)">Jawaban kosong.</em>';
     }
   } catch (err) {
+    if (renderTimer) {
+      clearTimeout(renderTimer);
+      renderTimer = null;
+    }
     if (err.name === 'AbortError') {
       if (streamText) contentEl.innerHTML = renderMarkdown(streamText);
       else contentEl.innerHTML = '<em style="color:var(--text-dim)">Dibatalkan.</em>';
