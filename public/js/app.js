@@ -56,6 +56,23 @@ const md = window.markdownit({
   },
 });
 
+function renderMarkdown(text) {
+  const div = document.createElement('div');
+  div.innerHTML = md.render(text);
+  if (window.renderMathInElement) {
+    window.renderMathInElement(div, {
+      delimiters: [
+        { left: '$$', right: '$$', display: true },
+        { left: '$', right: '$', display: false },
+        { left: '\\(', right: '\\)', display: false },
+        { left: '\\[', right: '\\]', display: true }
+      ],
+      throwOnError: false
+    });
+  }
+  return div.innerHTML;
+}
+
 // ═══════════ Util ═══════════
 function toast(msg, isError = false) {
   els.toast.textContent = msg;
@@ -247,7 +264,7 @@ function msgEl(role, content = '', attachments = []) {
 
   const contentEl = document.createElement('div');
   contentEl.className = 'msg-content';
-  contentEl.innerHTML = md.render(content);
+  contentEl.innerHTML = renderMarkdown(content);
 
   body.append(roleLbl, attBox, contentEl);
 
@@ -491,7 +508,7 @@ async function sendMessage({ regenerate = false } = {}) {
   const appendDelta = (t) => {
     if (!streamText) typing.remove();
     streamText += t;
-    contentEl.innerHTML = md.render(streamText);
+    contentEl.innerHTML = renderMarkdown(streamText);
     scrollToBottom();
   };
 
@@ -542,10 +559,10 @@ async function sendMessage({ regenerate = false } = {}) {
     }
   } catch (err) {
     if (err.name === 'AbortError') {
-      if (streamText) contentEl.innerHTML = md.render(streamText);
+      if (streamText) contentEl.innerHTML = renderMarkdown(streamText);
       else contentEl.innerHTML = '<em style="color:var(--text-dim)">Dibatalkan.</em>';
     } else {
-      contentEl.innerHTML = md.render(streamText);
+      contentEl.innerHTML = renderMarkdown(streamText);
       toast(err.message, true);
     }
   } finally {

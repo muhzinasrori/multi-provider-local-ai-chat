@@ -27,6 +27,10 @@ app.use(
   '/vendor/highlightjs',
   express.static(path.join(config.root, 'node_modules/@highlightjs/cdn-assets'))
 );
+app.use(
+  '/vendor/katex',
+  express.static(path.join(config.root, 'node_modules/katex/dist'))
+);
 app.use('/uploads', express.static(config.uploadsDir));
 
 // ── Model & provider (dibaca ulang dari .env tiap request) ────────────────
