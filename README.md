@@ -17,6 +17,7 @@ Mendukung respons streaming kata-per-kata (*Server-Sent Events*), berbagai penye
   * Mendukung gambar (`.jpg`, `.png`, `.webp`, `.gif`), dokumen `.pdf`, dan file teks/kode (`.txt`, `.json`, `.js`, `.py`, `.csv`, `.md`).
 * **Tampilan Modern & Responsif:** Mendukung **Mode Gelap / Terang**, render tabel Markdown, *syntax highlighting* untuk kode program, serta tombol **Salin Kode**.
 * **Karakter AI Kustom:** Karakter AI dapat diatur sesuai dengan apa yang diinginkan.
+* **Support Katex:** Bisa menampilkan persamaan matematika di dalam chat.
 
 ---
 
