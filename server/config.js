@@ -61,6 +61,16 @@ const PROVIDERS = [
     models: ['gpt-4o-mini', 'gpt-4o'],
     vision: true,
   },
+  {
+    id: 'ollama',
+    label: 'Ollama (Local AI)',
+    adapter: 'openai',
+    apiKeyEnv: 'OLLAMA_API_KEY',
+    baseUrlEnv: 'OLLAMA_BASE_URL',
+    defaultBaseUrl: 'http://localhost:11434/v1',
+    models: ['qwen3:1.7b'],
+    vision: false,
+  },
 ];
 
 function enabledProviders() {
