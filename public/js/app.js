@@ -9,6 +9,7 @@ const state = {
   attachments: [], // lampiran menunggu dikirim: {id, filename, mime, size, url}
   streaming: false,
   abort: null,
+  thinking: localStorage.getItem('thinking-mode') === 'true',
 };
 
 // ═══════════ Elemen ═══════════
@@ -26,10 +27,52 @@ const els = {
   fileInput: $('#file-input'),
   attPreview: $('#attachments-preview'),
   modelSelect: $('#model-select'),
+  thinkingToggle: $('#thinking-toggle'),
+  thinkingStatus: $('#thinking-status'),
   toast: $('#toast'),
   banner: $('#no-key-banner'),
   hljsTheme: $('#hljs-theme'),
 };
+
+// ═══════════ Thinking Mode ═══════════
+function updateThinkingToggle() {
+  const model = state.models.find(
+    (m) => m.id === state.model
+  );
+
+  const supported = Boolean(model?.supportsThinking);
+
+  els.thinkingToggle.classList.toggle(
+    'hidden',
+    !supported
+  );
+
+  if (!supported) return;
+
+  els.thinkingStatus.textContent =
+    state.thinking ? 'ON' : 'OFF';
+
+  els.thinkingToggle.setAttribute(
+    'aria-pressed',
+    String(state.thinking)
+  );
+
+  els.thinkingToggle.classList.toggle(
+    'active',
+    state.thinking
+  );
+}
+
+els.thinkingToggle.addEventListener('click', () => {
+  state.thinking = !state.thinking;
+
+  localStorage.setItem(
+    'thinking-mode',
+    String(state.thinking)
+  );
+
+  updateThinkingToggle();
+});
 
 // ═══════════ Markdown + highlight.js ═══════════
 const md = window.markdownit({
@@ -158,12 +201,14 @@ async function loadModels() {
   if (!models.some((m) => m.id === state.model)) state.model = models[0]?.id || '';
   els.modelSelect.value = state.model;
   $('#welcome-model').textContent = state.model || 'AI';
+  updateThinkingToggle();
 }
 
 els.modelSelect.addEventListener('change', () => {
   state.model = els.modelSelect.value;
   localStorage.setItem('model', state.model);
   $('#welcome-model').textContent = state.model;
+  updateThinkingToggle();
 });
 
 // ═══════════ Sidebar: riwayat ═══════════
@@ -349,6 +394,7 @@ async function openConversation(id) {
   if (conversation.model && state.models.some((x) => x.id === conversation.model)) {
     state.model = conversation.model;
     els.modelSelect.value = state.model;
+    updateThinkingToggle();
   }
   loadConversations();
   scrollToBottom();
@@ -567,6 +613,7 @@ async function sendMessage({ regenerate = false } = {}) {
         model: state.model,
         attachmentIds: regenerate ? [] : attachmentIds,
         regenerate,
+        thinking: state.thinking,
       }),
     });
     if (!res.ok) {

@@ -3,7 +3,7 @@
  * Streaming: :streamGenerateContent?alt=sse
  * Gambar/PDF dikirim sebagai inlineData base64.
  */
-async function streamChat({ provider, model, messages, onDelta, signal }) {
+async function streamChat({ provider, model, messages, onDelta, signal, thinking = false }) {
   const systemText = messages.find((m) => m.role === 'system')?.parts.map((p) => p.text).join('\n');
   const contents = messages
     .filter((m) => m.role !== 'system')
@@ -20,15 +20,21 @@ async function streamChat({ provider, model, messages, onDelta, signal }) {
     `${provider.baseUrl.replace(/\/+$/, '')}/v1beta/models/${encodeURIComponent(model)}` +
     `:streamGenerateContent?alt=sse&key=${encodeURIComponent(provider.apiKey)}`;
 
+  const isSupported = (provider.thinkingModels || []).includes(model);
+
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents,
       ...(systemText ? { systemInstruction: { parts: [{ text: systemText }] } } : {}),
+      ...(isSupported
+        ? { generationConfig: { thinkingConfig: { thinkingBudget: thinking ? 8192 : 0 } } }
+        : {}),
     }),
     signal,
   });
+
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');

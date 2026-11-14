@@ -381,3 +381,33 @@ svg { display: block; }
   overflow-y: hidden;
   padding: 6px 0;
 }
+
+/* Thinking Mode Toggle */
+.thinking-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.thinking-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.thinking-toggle.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.thinking-status {
+  font-weight: 700;
+}

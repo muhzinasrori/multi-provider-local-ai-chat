@@ -131,7 +131,13 @@ app.post('/api/upload', upload.array('files', 10), (req, res) => {
 
 // ── Chat dengan streaming SSE ─────────────────────────────────────────────
 app.post('/api/chat', async (req, res) => {
-  const { content = '', model, attachmentIds = [], regenerate = false } = req.body || {};
+  const {
+    content = '',
+    model,
+    attachmentIds = [],
+    regenerate = false,
+    thinking = false
+  } = req.body || {};
 
   const found = findModel(String(model || ''));
   if (!found) return res.status(400).json({ error: `Model tidak tersedia: ${model}. Periksa API Key di .env.` });
@@ -203,6 +209,7 @@ app.post('/api/chat', async (req, res) => {
       provider,
       model: modelId,
       messages: adapterMessages,
+      thinking: (provider.thinkingModels || []).includes(modelId) && thinking === true,
       signal: abort.signal,
       onDelta: (text) => {
         full += text;

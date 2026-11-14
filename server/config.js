@@ -38,6 +38,7 @@ const PROVIDERS = [
     baseUrlEnv: 'ZAI_BASE_URL',
     defaultBaseUrl: 'https://api.z.ai/api/paas/v4',
     models: ['glm-4.7-flash', 'glm-4.6-flash', 'glm-4.5-flash'],
+    thinkingModels: ['glm-4.7-flash', 'glm-4.6-flash', 'glm-4.5-flash'],
     vision: true,
   },
   {
@@ -47,7 +48,8 @@ const PROVIDERS = [
     apiKeyEnv: 'GEMINI_API_KEY',
     baseUrlEnv: 'GEMINI_BASE_URL',
     defaultBaseUrl: 'https://generativelanguage.googleapis.com',
-    models: ['gemini-3.8-flash', 'gemini-2.5-flash'],
+    models: ['gemini-3.8-flash'],
+    thinkingModels: ['gemini-3.8-flash'],
     vision: true,
     pdfInline: true, // kirim PDF langsung sebagai inlineData
   },
@@ -68,9 +70,27 @@ const PROVIDERS = [
     apiKeyEnv: 'OLLAMA_API_KEY',
     baseUrlEnv: 'OLLAMA_BASE_URL',
     defaultBaseUrl: 'http://localhost:11434/v1',
-    models: ['qwen3:1.7b'],
+    models: ['qwen3:1.7b', 'qwen2.5:0.5b', 'qwen2.5:1.5b'],
+    thinkingModels: ['qwen3:1.7b'],
     vision: false,
   },
+  {
+    id: 'groq',
+    label: 'Groq Cloud',
+    adapter: 'openai',
+    apiKeyEnv: 'GROQ_API_KEY',
+    baseUrlEnv: 'GROQ_BASE_URL',
+    defaultBaseUrl: 'https://api.groq.com/openai/v1',
+    models: [
+      'openai/gpt-oss-20b',
+      'openai/gpt-oss-120b',
+      'qwen/qwen3.8-27b',
+      'openai/gpt-oss-safeguard-20b'
+    ],
+    thinkingModels: ['openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'qwen/qwen3.8-27b'],
+    vision: true,
+  },
+
 ];
 
 function enabledProviders() {
@@ -111,6 +131,7 @@ function modelList() {
       provider: p.id,
       providerLabel: p.label,
       label: `${m} · ${p.label}`,
+      supportsThinking: (p.thinkingModels || []).includes(m),
     }))
   );
 }

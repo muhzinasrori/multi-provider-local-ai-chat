@@ -38,6 +38,13 @@
         <svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4 7h16M4 12h16M4 17h16"/></svg>
       </button>
       <select id="model-select" class="model-select" title="Pilih model AI"></select>
+      <button id="thinking-toggle"
+        class="thinking-toggle hidden"
+        type="button"
+        aria-pressed="false">
+        <span>Thinking</span>
+        <span id="thinking-status">OFF</span>
+      </button>
       <span id="no-key-banner" class="banner hidden">
         Belum ada API Key aktif — isi <code>.env</code> atau set <code>MOCK_API=true</code>.
       </span>

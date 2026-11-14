@@ -6,10 +6,26 @@
  * messages: [{ role, parts: [{type:'text',text} | {type:'image',mime,base64}] }]
  * onDelta(text) dipanggil untuk tiap potongan token.
  */
-async function streamChat({ provider, model, messages, onDelta, signal }) {
+async function streamChat({ provider, model, messages, onDelta, signal, thinking = false }) {
+  const isSupported = (provider.thinkingModels || []).includes(model);
+  let extraBody = {};
+
+  if (isSupported) {
+    if (provider.id === 'zai') {
+      extraBody.thinking = { type: thinking ? 'enabled' : 'disabled' };
+    } else if (model.includes('gpt-oss')) {
+      extraBody.reasoning_effort = thinking ? 'high' : 'low';
+    } else if (provider.id === 'ollama') {
+      extraBody.reasoning_effort = thinking ? 'high' : 'none';
+    } else {
+      extraBody.reasoning_effort = thinking ? 'default' : 'none';
+    }
+  }
+
   const body = {
     model,
     stream: true,
+    ...extraBody,
     messages: messages.map((m) => ({
       role: m.role,
       content: m.parts.map((p) =>
