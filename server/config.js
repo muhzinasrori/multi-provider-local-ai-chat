@@ -64,6 +64,17 @@ const PROVIDERS = [
     vision: true,
   },
   {
+    id: 'deepseek',
+    label: 'DeepSeek',
+    adapter: 'openai',
+    apiKeyEnv: 'DEEPSEEK_API_KEY',
+    baseUrlEnv: 'DEEPSEEK_BASE_URL',
+    defaultBaseUrl: 'https://api.deepseek.com',
+    models: ['deepseek-flash', 'deepseek-v4-pro'],
+    thinkingModels: ['deepseek-chat', 'reasoner'],
+    vision: false,
+  },
+  {
     id: 'ollama',
     label: 'Ollama (Local AI)',
     adapter: 'openai',

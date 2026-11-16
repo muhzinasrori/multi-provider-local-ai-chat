@@ -140,7 +140,7 @@ Aplikasi ini mendukung penyedia lain yang memiliki endpoint kompatibel dengan Op
      adapter: 'openai',
      apiKeyEnv: 'DEEPSEEK_API_KEY',
      baseUrlEnv: 'DEEPSEEK_BASE_URL',
-     defaultBaseUrl: 'https://deepseek.com',
+     defaultBaseUrl: 'https://api.deepseek.com',
      models: ['deepseek-chat'],
      vision: false,
    },

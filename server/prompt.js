@@ -29,7 +29,13 @@ async function extractPdfText(att) {
  */
 async function buildParts(message, attachments, provider) {
   const parts = [];
-  if (message.content) parts.push({ type: 'text', text: message.content });
+  if (message.content) {
+    const cleanText = message.role === 'assistant'
+      ? message.content.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim()
+      : message.content;
+
+    if (cleanText) parts.push({ type: 'text', text: cleanText });
+  }
 
   for (const att of attachments) {
     if (isImage(att)) {

@@ -6,7 +6,7 @@
  * messages: [{ role, parts: [{type:'text',text} | {type:'image',mime,base64}] }]
  * onDelta(text) dipanggil untuk tiap potongan token.
  */
-async function streamChat({ provider, model, messages, onDelta, signal, thinking = false }) {
+async function streamChat({ provider, model, messages, onDelta, onThinking, signal, thinking = false }) {
   const isSupported = (provider.thinkingModels || []).includes(model);
   let extraBody = {};
 
@@ -14,9 +14,11 @@ async function streamChat({ provider, model, messages, onDelta, signal, thinking
     if (provider.id === 'zai') {
       extraBody.thinking = { type: thinking ? 'enabled' : 'disabled' };
     } else if (model.includes('gpt-oss')) {
-      extraBody.reasoning_effort = thinking ? 'high' : 'low';
+      extraBody.reasoning_effort = thinking ? 'medium' : 'low';
     } else if (provider.id === 'ollama') {
       extraBody.reasoning_effort = thinking ? 'high' : 'none';
+    } else if (provider.id === 'deepseek') {
+      extraBody.thinking = { type: thinking ? 'enabled' : 'disabled' };
     } else {
       extraBody.reasoning_effort = thinking ? 'default' : 'none';
     }
@@ -25,6 +27,7 @@ async function streamChat({ provider, model, messages, onDelta, signal, thinking
   const body = {
     model,
     stream: true,
+    max_tokens: 7192,
     ...extraBody,
     messages: messages.map((m) => ({
       role: m.role,
@@ -54,8 +57,10 @@ async function streamChat({ provider, model, messages, onDelta, signal, thinking
   for await (const json of parseSSE(res.body)) {
     if (json === '[DONE]') break;
     try {
-      const delta = json.choices?.[0]?.delta?.content;
-      if (delta) onDelta(delta);
+      const choice = json.choices?.[0]?.delta;
+      const thought = choice?.reasoning || choice?.reasoning_content;
+      if (thought && onThinking) onThinking(thought);
+      if (choice?.content) onDelta(choice.content);
     } catch {
       /* abaikan chunk tak terparse */
     }

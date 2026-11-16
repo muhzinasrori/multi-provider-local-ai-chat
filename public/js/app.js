@@ -100,6 +100,14 @@ const md = window.markdownit({
 });
 
 function renderMarkdown(text) {
+  let thinkingHtml = '';
+  text = text.replace(/<think>([\s\S]*?)(?:<\/think>|$)/g, (_, thought) => {
+    const cleanThought = thought.trim();
+    if (cleanThought) {
+      thinkingHtml += `<details class="thought-box" open><summary>💭 Thinking</summary><div class="thought-content">${md.render(cleanThought)}</div></details>`;
+    }
+    return '';
+  });
   const codeBlocks = [];
   const mathBlocks = [];
 
@@ -148,7 +156,7 @@ function renderMarkdown(text) {
     }
   });
 
-  return html;
+  return thinkingHtml + html;
 }
 
 // ═══════════ Util ═══════════
@@ -586,16 +594,28 @@ async function sendMessage({ regenerate = false } = {}) {
   updateSendState();
 
   let streamText = '';
+  let streamThinking = '';
   let renderTimer = null;
+
+  const combinedStream = () =>
+    (streamThinking ? `<think>\n${streamThinking}\n</think>\n\n` : '') + streamText;
 
   const flushRender = () => {
     renderTimer = null;
-    contentEl.innerHTML = renderMarkdown(streamText);
+    contentEl.innerHTML = renderMarkdown(combinedStream());
     scrollToBottom();
   };
 
+  const appendThinking = (t) => {
+    if (!streamText && !streamThinking) typing.remove();
+    streamThinking += t;
+    if (!renderTimer) {
+      renderTimer = setTimeout(flushRender, 80);
+    }
+  };
+
   const appendDelta = (t) => {
-    if (!streamText) typing.remove();
+    if (!streamText && !streamThinking) typing.remove();
     streamText += t;
     if (!renderTimer) {
       renderTimer = setTimeout(flushRender, 80);
@@ -636,6 +656,7 @@ async function sendMessage({ regenerate = false } = {}) {
           if (!line.startsWith('data:')) continue;
           let evt;
           try { evt = JSON.parse(line.slice(5)); } catch { continue; }
+          if (evt.thinkingDelta) appendThinking(evt.thinkingDelta);
           if (evt.delta) appendDelta(evt.delta);
           if (evt.error) toast(evt.error, true);
           if (evt.done) {
@@ -649,7 +670,7 @@ async function sendMessage({ regenerate = false } = {}) {
       clearTimeout(renderTimer);
       flushRender();
     }
-    if (!streamText) {
+    if (!combinedStream()) {
       contentEl.innerHTML = '<em style="color:var(--text-dim)">Jawaban kosong.</em>';
     }
   } catch (err) {
@@ -658,10 +679,10 @@ async function sendMessage({ regenerate = false } = {}) {
       renderTimer = null;
     }
     if (err.name === 'AbortError') {
-      if (streamText) contentEl.innerHTML = renderMarkdown(streamText);
+      if (combinedStream()) contentEl.innerHTML = renderMarkdown(combinedStream());
       else contentEl.innerHTML = '<em style="color:var(--text-dim)">Dibatalkan.</em>';
     } else {
-      contentEl.innerHTML = renderMarkdown(streamText);
+      contentEl.innerHTML = renderMarkdown(combinedStream());
       toast(err.message, true);
     }
   } finally {

@@ -3,7 +3,7 @@
  * Streaming: :streamGenerateContent?alt=sse
  * Gambar/PDF dikirim sebagai inlineData base64.
  */
-async function streamChat({ provider, model, messages, onDelta, signal, thinking = false }) {
+async function streamChat({ provider, model, messages, onDelta, onThinking, signal, thinking = false }) {
   const systemText = messages.find((m) => m.role === 'system')?.parts.map((p) => p.text).join('\n');
   const contents = messages
     .filter((m) => m.role !== 'system')
@@ -21,6 +21,23 @@ async function streamChat({ provider, model, messages, onDelta, signal, thinking
     `:streamGenerateContent?alt=sse&key=${encodeURIComponent(provider.apiKey)}`;
 
   const isSupported = (provider.thinkingModels || []).includes(model);
+  const isGemini3OrNewer = /^gemini-[34]/.test(model);
+
+  // Konfigurasi thinking sesuai versi model Gemini
+  let thinkingConfig;
+  if (isSupported) {
+    if (isGemini3OrNewer) {
+      thinkingConfig = {
+        thinkingLevel: thinking ? 'HIGH' : 'LOW',
+        includeThoughts: thinking,
+      };
+    } else {
+      thinkingConfig = {
+        thinkingBudget: thinking ? 8192 : 0,
+        includeThoughts: thinking,
+      };
+    }
+  }
 
   const res = await fetch(url, {
     method: 'POST',
@@ -28,13 +45,10 @@ async function streamChat({ provider, model, messages, onDelta, signal, thinking
     body: JSON.stringify({
       contents,
       ...(systemText ? { systemInstruction: { parts: [{ text: systemText }] } } : {}),
-      ...(isSupported
-        ? { generationConfig: { thinkingConfig: { thinkingBudget: thinking ? 8192 : 0 } } }
-        : {}),
+      ...(thinkingConfig ? { generationConfig: { thinkingConfig } } : {}),
     }),
     signal,
   });
-
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
@@ -44,7 +58,12 @@ async function streamChat({ provider, model, messages, onDelta, signal, thinking
   for await (const json of parseSSE(res.body)) {
     const parts = json.candidates?.[0]?.content?.parts || [];
     for (const part of parts) {
-      if (part.text) onDelta(part.text);
+      if (!part.text) continue;
+      if (part.thought) {
+        if (onThinking) onThinking(part.text);
+      } else {
+        onDelta(part.text);
+      }
     }
   }
 }

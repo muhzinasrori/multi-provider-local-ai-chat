@@ -411,3 +411,31 @@ svg { display: block; }
 .thinking-status {
   font-weight: 700;
 }
+
+/* ═══════════ Thinking Dialog ═══════════ */
+.thought-box {
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.thought-box summary {
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+  background: var(--bg-hover);
+}
+.thought-box summary:hover {
+  color: var(--text);
+}
+.thought-content {
+  padding: 10px 14px;
+  font-size: 13.5px;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+  line-height: 1.55;
+}

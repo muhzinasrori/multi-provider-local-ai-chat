@@ -202,6 +202,7 @@ app.post('/api/chat', async (req, res) => {
   req.on('close', () => abort.abort());
 
   let full = '';
+  let fullThinking = '';
   const sendEvent = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
 
   try {
@@ -211,20 +212,26 @@ app.post('/api/chat', async (req, res) => {
       messages: adapterMessages,
       thinking: (provider.thinkingModels || []).includes(modelId) && thinking === true,
       signal: abort.signal,
+      onThinking: (text) => {
+        fullThinking += text;
+        sendEvent({ thinkingDelta: text });
+      },
       onDelta: (text) => {
         full += text;
         sendEvent({ delta: text });
       },
     });
-    const assistantMsgId = q.addMessage(convId, 'assistant', full, modelId);
+    const savedContent = fullThinking ? `<think>\n${fullThinking}\n</think>\n\n${full}` : full;
+    const assistantMsgId = q.addMessage(convId, 'assistant', savedContent, modelId);
     q.touchConversation(convId, modelId);
     sendEvent({ done: true, conversationId: convId, messageId: assistantMsgId, userMessageId: userMsgId });
   } catch (err) {
     console.error('[chat]', err);
     sendEvent({ error: err.message || 'Terjadi kesalahan pada provider API' });
-    if (full) {
+    const partialContent = fullThinking ? `<think>\n${fullThinking}\n</think>\n\n${full}` : full;
+    if (partialContent) {
       // simpan sebagian agar riwayat tidak hilang
-      const id = q.addMessage(convId, 'assistant', full, modelId);
+      const id = q.addMessage(convId, 'assistant', partialContent, modelId);
       sendEvent({ done: true, conversationId: convId, messageId: id });
     }
   }
