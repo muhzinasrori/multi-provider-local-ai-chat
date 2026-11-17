@@ -6,6 +6,8 @@
  * messages: [{ role, parts: [{type:'text',text} | {type:'image',mime,base64}] }]
  * onDelta(text) dipanggil untuk tiap potongan token.
  */
+const { config } = require('../config');
+
 async function streamChat({ provider, model, messages, onDelta, onThinking, signal, thinking = false }) {
   const isSupported = (provider.thinkingModels || []).includes(model);
   let extraBody = {};
@@ -27,7 +29,7 @@ async function streamChat({ provider, model, messages, onDelta, onThinking, sign
   const body = {
     model,
     stream: true,
-    max_tokens: 7192,
+    max_tokens: config.maxTokens,
     ...extraBody,
     messages: messages.map((m) => ({
       role: m.role,

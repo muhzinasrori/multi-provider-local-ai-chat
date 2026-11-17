@@ -3,6 +3,9 @@
  * Streaming: :streamGenerateContent?alt=sse
  * Gambar/PDF dikirim sebagai inlineData base64.
  */
+
+const { config } = require('../config');
+
 async function streamChat({ provider, model, messages, onDelta, onThinking, signal, thinking = false }) {
   const systemText = messages.find((m) => m.role === 'system')?.parts.map((p) => p.text).join('\n');
   const contents = messages
@@ -45,7 +48,10 @@ async function streamChat({ provider, model, messages, onDelta, onThinking, sign
     body: JSON.stringify({
       contents,
       ...(systemText ? { systemInstruction: { parts: [{ text: systemText }] } } : {}),
-      ...(thinkingConfig ? { generationConfig: { thinkingConfig } } : {}),
+      generationConfig: {
+        maxOutputTokens: config.maxTokens,
+        ...(thinkingConfig ? { thinkingConfig } : {}),
+      },
     }),
     signal,
   });

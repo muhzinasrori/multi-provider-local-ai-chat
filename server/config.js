@@ -8,6 +8,7 @@ const config = {
   root: ROOT,
   port: Number(process.env.PORT) || 3000,
   maxUploadBytes: (Number(process.env.MAX_UPLOAD_MB) || 20) * 1024 * 1024,
+  maxTokens: Number(process.env.MAX_TOKENS) || 28000,
   systemPrompt: (process.env.SYSTEM_PROMPT || '').trim(),
   uploadsDir: path.join(ROOT, 'uploads'),
   dataDir: path.join(ROOT, 'data'),
