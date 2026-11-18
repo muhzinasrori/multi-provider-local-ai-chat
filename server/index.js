@@ -3,6 +3,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const express = require('express');
 const multer = require('multer');
+const { execFile, spawn } = require('child_process');
 
 const { config, modelList, findModel, enabledProviders } = require('./config');
 const { LOCAL_USER_ID, q } = require('./db');
@@ -35,7 +36,11 @@ app.use('/uploads', express.static(config.uploadsDir));
 
 // ── Model & provider (dibaca ulang dari .env tiap request) ────────────────
 app.get('/api/models', (_req, res) => {
-  res.json({ models: modelList(), providers: enabledProviders().map((p) => p.id) });
+  res.json({
+    models: modelList(),
+    providers: enabledProviders().map((p) => p.id),
+    hasTtsApi: Boolean((process.env.TTS_API_KEY || '').trim()), 
+  });
 });
 
 // ── CRUD percakapan ───────────────────────────────────────────────────────
@@ -133,10 +138,10 @@ const audioUpload = multer({ storage: multer.memoryStorage() });
 
 app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
   try {
-    const apiKey = (process.env.TTS_API_KEY || '').trim();
-    const baseUrl = (process.env.TTS_BASE_URL).trim().replace(/\/+$/, '');
+    const apiKey = (process.env.SST_API_KEY || '').trim();
+    const baseUrl = (process.env.SST_BASE_URL || '').trim().replace(/\/+$/, '');
 
-    if (!apiKey) return res.status(400).json({ error: 'TTS_API_KEY belum diisi di .env' });
+    if (!apiKey) return res.status(400).json({ error: 'SST_API_KEY belum diisi di .env' });
     if (!req.file) return res.status(400).json({ error: 'Audio kosong' });
 
     const fd = new FormData();
@@ -157,6 +162,116 @@ app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+app.post('/api/tts', async (req, res) => {
+  try {
+    const text = String(req.body.text || '').trim();
+    if (!text) return res.status(400).json({ error: 'Teks kosong' });
+
+    const ttsApiKey = (process.env.TTS_API_KEY || '').trim();
+    const ttsBaseUrl = (process.env.TTS_BASE_URL || '').trim().replace(/\/+$/, '');
+
+    if (!ttsApiKey) {
+      return res.status(204).end();
+    }
+
+    if (['espeak-ng', 'espeak'].includes(ttsApiKey.toLowerCase())) {
+      const lang = req.body.lang === 'en-US' ? 'en' : (process.env.TTS_VOICE || 'id');
+      const outFile = path.join(config.uploadsDir, `tts-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.wav`);
+      const espeakCmd = ttsBaseUrl || 'espeak-ng';
+
+      return execFile(espeakCmd, ['-v', lang, '-w', outFile, text], (err) => {
+        if (err) {
+          console.error('[espeak-ng]', err);
+          return res.status(500).json({ error: 'Gagal menjalankan eSpeak NG' });
+        }
+        res.setHeader('Content-Type', 'audio/wav');
+        res.sendFile(outFile, () => fs.rmSync(outFile, { force: true }));
+      });
+    }
+
+    if (ttsApiKey.toLowerCase() === 'piper') {
+      const piperCmd = ttsBaseUrl || 'piper';
+      const modelPath = (process.env.TTS_MODEL || '').trim();
+      if (!modelPath) {
+        return res.status(400).json({ error: 'TTS_MODEL (path file .onnx) belum diisi di .env' });
+      }
+
+      const outFile = path.join(config.uploadsDir, `tts-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.wav`);
+      const child = spawn(piperCmd, ['--model', modelPath, '--output_file', outFile]);
+
+      let stderr = '';
+      child.stderr.on('data', (d) => (stderr += d.toString()));
+
+      child.on('error', (err) => {
+        console.error('[piper]', err);
+        if (!res.headersSent) res.status(500).json({ error: 'Gagal menjalankan piper.exe' });
+      });
+
+      child.on('close', (code) => {
+        if (code !== 0) {
+          console.error('[piper exit]', code, stderr);
+          if (!res.headersSent) res.status(500).json({ error: 'Piper gagal memproses suara' });
+          return;
+        }
+        res.setHeader('Content-Type', 'audio/wav');
+        res.sendFile(outFile, () => fs.rmSync(outFile, { force: true }));
+      });
+
+      child.stdin.write(text);
+      child.stdin.end();
+      return;
+    }
+
+    if (ttsBaseUrl.includes('elevenlabs.io')) {
+      const voiceId = (process.env.TTS_VOICE || '21m00Tcm4TlvDq8ikWAM').trim();
+      const apiRes = await fetch(`${ttsBaseUrl}/text-to-speech/${encodeURIComponent(voiceId)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'xi-api-key': ttsApiKey,
+        },
+        body: JSON.stringify({
+          text,
+          model_id: process.env.TTS_MODEL || 'eleven_multilingual_v2',
+        }),
+      });
+
+      if (!apiRes.ok) {
+        const err = await apiRes.text().catch(() => '');
+        throw new Error(`ElevenLabs Error ${apiRes.status}: ${err.slice(0, 200)}`);
+      }
+
+      res.setHeader('Content-Type', 'audio/mpeg');
+      return res.send(Buffer.from(await apiRes.arrayBuffer()));
+    }
+
+    const apiRes = await fetch(`${ttsBaseUrl || 'https://api.openai.com/v1'}/audio/speech`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${ttsApiKey}`,
+      },
+      body: JSON.stringify({
+        model: process.env.TTS_MODEL || 'tts-1',
+        voice: process.env.TTS_VOICE || 'alloy',
+        input: text,
+      }),
+    });
+
+    if (!apiRes.ok) {
+      const err = await apiRes.text().catch(() => '');
+      throw new Error(`TTS API Error ${apiRes.status}: ${err.slice(0, 200)}`);
+    }
+
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.send(Buffer.from(await apiRes.arrayBuffer()));
+  } catch (err) {
+    console.error('[tts]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // ── Chat dengan streaming SSE ─────────────────────────────────────────────
 app.post('/api/chat', async (req, res) => {

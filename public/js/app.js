@@ -10,6 +10,7 @@ const state = {
   streaming: false,
   abort: null,
   thinking: localStorage.getItem('thinking-mode') === 'true',
+  hasTtsApi: false,
 };
 
 // ═══════════ Elemen ═══════════
@@ -188,7 +189,8 @@ const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) =>
 
 // ═══════════ Model dropdown ═══════════
 async function loadModels() {
-  const { models, providers } = await api('/api/models');
+  const { models, providers, hasTtsApi } = await api('/api/models');
+  state.hasTtsApi = Boolean(hasTtsApi);
   state.models = models;
   els.banner.classList.toggle('hidden', providers.length > 0);
 
@@ -791,6 +793,7 @@ const voiceCall = {
   isSpeaking: false,
   sentenceBuffer: '',
   utteranceQueue: [],
+  currentAudio: null,
 };
 
 const callEls = {
@@ -825,7 +828,25 @@ function detectLang(text) {
   return enWords.test(text) ? 'en-US' : 'id-ID';
 }
 
-function speakNextInQueue() {
+function speakWithDeviceTTS(sentence, targetLang) {
+  const utter = new SpeechSynthesisUtterance(sentence);
+  utter.lang = targetLang;
+  utter.rate = 1.05;
+
+  const voices = speechSynthesis.getVoices();
+  const matchedVoice =
+    voices.find((v) => v.lang.toLowerCase().startsWith(targetLang.slice(0, 2)) && v.name.includes('Natural')) ||
+    voices.find((v) => v.lang.toLowerCase().startsWith(targetLang.slice(0, 2))) ||
+    voices[0];
+
+  if (matchedVoice) utter.voice = matchedVoice;
+
+  utter.onend = () => speakNextInQueue();
+  utter.onerror = () => speakNextInQueue();
+  speechSynthesis.speak(utter);
+}
+
+async function speakNextInQueue() {
   if (!voiceCall.active) return;
   if (voiceCall.utteranceQueue.length === 0) {
     voiceCall.isSpeaking = false;
@@ -836,21 +857,44 @@ function speakNextInQueue() {
   voiceCall.isSpeaking = true;
   setCallState('speaking', 'AI sedang berbicara...');
 
-  const sentence = voiceCall.utteranceQueue.shift();
-  const targetLang = detectLang(sentence);
-  const utter = new SpeechSynthesisUtterance(sentence);
-  utter.lang = targetLang;
-  utter.rate = 1.05;
+  const combinedText = voiceCall.utteranceQueue.splice(0).join(' ');
+  const targetLang = detectLang(combinedText);
 
-  const voices = speechSynthesis.getVoices();
-  const matchedVoice =
-    voices.find((v) => v.lang.toLowerCase().startsWith(targetLang.slice(0, 2))) ||
-    voices[0];
-  if (matchedVoice) utter.voice = matchedVoice;
+  if (!state.hasTtsApi) {
+    return speakWithDeviceTTS(combinedText, targetLang); 
+  }
 
-  utter.onend = () => speakNextInQueue();
-  utter.onerror = () => speakNextInQueue();
-  speechSynthesis.speak(utter);
+  try {
+    const res = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: combinedText, lang: targetLang }),
+    });
+
+    if (res.status === 204 || !res.ok) {
+      return speakWithDeviceTTS(combinedText, targetLang); 
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    voiceCall.currentAudio = audio;
+
+    audio.onended = () => {
+      URL.revokeObjectURL(url);
+      voiceCall.currentAudio = null;
+      speakNextInQueue();
+    };
+    audio.onerror = () => {
+      URL.revokeObjectURL(url);
+      voiceCall.currentAudio = null;
+      speakWithDeviceTTS(combinedText, targetLang);
+    };
+
+    await audio.play();
+  } catch {
+    speakWithDeviceTTS(combinedText, targetLang); 
+  }
 }
 
 function enqueueSpeech(text) {
@@ -880,7 +924,12 @@ function flushVoiceStream() {
 }
 
 function stopSpeaking() {
+  if (voiceCall.currentAudio) {
+    voiceCall.currentAudio.pause();
+    voiceCall.currentAudio = null;
+  }
   speechSynthesis.cancel();
+
   voiceCall.utteranceQueue = [];
   voiceCall.sentenceBuffer = '';
   voiceCall.isSpeaking = false;
