@@ -634,6 +634,7 @@ async function sendMessage({ regenerate = false } = {}) {
         attachmentIds: regenerate ? [] : attachmentIds,
         regenerate,
         thinking: state.thinking,
+        voiceMode: voiceCall.active,
       }),
     });
     if (!res.ok) {
@@ -657,9 +658,13 @@ async function sendMessage({ regenerate = false } = {}) {
           let evt;
           try { evt = JSON.parse(line.slice(5)); } catch { continue; }
           if (evt.thinkingDelta) appendThinking(evt.thinkingDelta);
-          if (evt.delta) appendDelta(evt.delta);
+          if (evt.delta) {
+            appendDelta(evt.delta);
+            if (voiceCall.active) feedVoiceStream(evt.delta);
+          }
           if (evt.error) toast(evt.error, true);
           if (evt.done) {
+            if (voiceCall.active) flushVoiceStream();
             state.conversationId = evt.conversationId;
             loadConversations();
           }
@@ -775,3 +780,214 @@ $('#theme-toggle').addEventListener('click', () => {
   els.input.focus();
 })();
 
+// ═══════════ Voice Call (VAD + Groq Whisper + Browser TTS) ═══════════
+const voiceCall = {
+  active: false,
+  stream: null,
+  recorder: null,
+  audioCtx: null,
+  chunks: [],
+  silenceTimer: null,
+  isSpeaking: false,
+  sentenceBuffer: '',
+  utteranceQueue: [],
+};
+
+const callEls = {
+  btn: $('#voice-call-btn'),
+  overlay: $('#call-overlay'),
+  orb: $('#call-orb'),
+  modelName: $('#call-model-name'),
+  status: $('#call-status'),
+  transcript: $('#call-transcript'),
+  interruptBtn: $('#call-interrupt-btn'),
+  endBtn: $('#call-end-btn'),
+};
+
+function setCallState(mode, text = '') {
+  callEls.orb.className = 'call-orb ' + mode;
+  callEls.status.textContent = text;
+}
+
+function cleanTextForSpeech(raw) {
+  return raw
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    .replace(/```[\s\(\S\)]*?```/g, ' kode program ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/[#*_~>|[\]()]/g, '')
+    .replace(/https?:\/\/\S+/g, 'tautan')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function detectLang(text) {
+  const enWords = /\b(the|is|are|was|were|you|your|have|has|with|for|that|this|what|how|can|will|would|could|should|and|but|not)\b/i;
+  return enWords.test(text) ? 'en-US' : 'id-ID';
+}
+
+function speakNextInQueue() {
+  if (!voiceCall.active) return;
+  if (voiceCall.utteranceQueue.length === 0) {
+    voiceCall.isSpeaking = false;
+    if (!state.streaming) startListening();
+    return;
+  }
+
+  voiceCall.isSpeaking = true;
+  setCallState('speaking', 'AI sedang berbicara...');
+
+  const sentence = voiceCall.utteranceQueue.shift();
+  const targetLang = detectLang(sentence);
+  const utter = new SpeechSynthesisUtterance(sentence);
+  utter.lang = targetLang;
+  utter.rate = 1.05;
+
+  const voices = speechSynthesis.getVoices();
+  const matchedVoice =
+    voices.find((v) => v.lang.toLowerCase().startsWith(targetLang.slice(0, 2))) ||
+    voices[0];
+  if (matchedVoice) utter.voice = matchedVoice;
+
+  utter.onend = () => speakNextInQueue();
+  utter.onerror = () => speakNextInQueue();
+  speechSynthesis.speak(utter);
+}
+
+function enqueueSpeech(text) {
+  const clean = cleanTextForSpeech(text);
+  if (!clean) return;
+  voiceCall.utteranceQueue.push(clean);
+  if (!voiceCall.isSpeaking) speakNextInQueue();
+}
+
+function feedVoiceStream(delta) {
+  voiceCall.sentenceBuffer += delta;
+  const parts = voiceCall.sentenceBuffer.split(/([.?!]+|\n+)/);
+  while (parts.length > 2) {
+    const sentence = parts.shift() + (parts.shift() || '');
+    enqueueSpeech(sentence);
+  }
+  voiceCall.sentenceBuffer = parts.join('');
+}
+
+function flushVoiceStream() {
+  if (voiceCall.sentenceBuffer.trim()) {
+    enqueueSpeech(voiceCall.sentenceBuffer);
+    voiceCall.sentenceBuffer = '';
+  } else if (!voiceCall.isSpeaking && voiceCall.active) {
+    startListening();
+  }
+}
+
+function stopSpeaking() {
+  speechSynthesis.cancel();
+  voiceCall.utteranceQueue = [];
+  voiceCall.sentenceBuffer = '';
+  voiceCall.isSpeaking = false;
+}
+
+async function startListening() {
+  if (!voiceCall.active || voiceCall.isSpeaking || state.streaming) return;
+  setCallState('listening', 'Mendengarkan Anda...');
+  callEls.transcript.textContent = '';
+
+  voiceCall.chunks = [];
+  const recorder = new MediaRecorder(voiceCall.stream, { mimeType: 'audio/webm' });
+  voiceCall.recorder = recorder;
+
+  recorder.ondataavailable = (e) => {
+    if (e.data.size > 0) voiceCall.chunks.push(e.data);
+  };
+
+  recorder.onstop = async () => {
+    if (!voiceCall.active || voiceCall.chunks.length === 0) return;
+    const blob = new Blob(voiceCall.chunks, { type: 'audio/webm' });
+    if (blob.size < 2500) return startListening(); // abaikan suara kosong/terlalu pendek
+
+    setCallState('', 'Mengenali suara...');
+    const fd = new FormData();
+    fd.append('audio', blob, 'voice.webm');
+
+    try {
+      const res = await fetch('/api/transcribe', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Gagal transkripsi');
+
+      const text = (data.text || '').trim();
+      if (!text) return startListening();
+
+      callEls.transcript.textContent = `"${text}"`;
+      setCallState('', 'AI sedang berpikir...');
+      els.input.value = text;
+      sendMessage();
+    } catch (err) {
+      toast(err.message, true);
+      startListening();
+    }
+  };
+
+  recorder.start();
+  monitorSilence();
+}
+
+function monitorSilence() {
+  const source = voiceCall.audioCtx.createMediaStreamSource(voiceCall.stream);
+  const analyser = voiceCall.audioCtx.createAnalyser();
+  analyser.fftSize = 512;
+  source.connect(analyser);
+
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  let hasSpoken = false;
+  let silenceStart = Date.now();
+
+  const check = () => {
+    if (!voiceCall.active || voiceCall.recorder?.state !== 'recording') return;
+    analyser.getByteFrequencyData(data);
+    const volume = data.reduce((a, b) => a + b, 0) / data.length;
+
+    if (volume > 18) { // ambang batas suara bicara
+      hasSpoken = true;
+      silenceStart = Date.now();
+    } else if (hasSpoken && Date.now() - silenceStart > 1500) {
+      // Berhenti bicara selama 1.5 detik -> kirim rekaman
+      voiceCall.recorder.stop();
+      return;
+    }
+    requestAnimationFrame(check);
+  };
+  requestAnimationFrame(check);
+}
+
+async function startVoiceCall() {
+  if (!state.model) return toast('Pilih model AI terlebih dahulu.', true);
+  try {
+    voiceCall.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    voiceCall.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    speechSynthesis.getVoices();
+
+    voiceCall.active = true;
+    callEls.modelName.textContent = state.model;
+    callEls.overlay.classList.remove('hidden');
+    startListening();
+  } catch {
+    toast('Gagal mengakses mikrofon di Brave. Periksa izin mikrofon.', true);
+  }
+}
+
+function endVoiceCall() {
+  voiceCall.active = false;
+  stopSpeaking();
+  if (state.streaming) state.abort?.abort();
+  if (voiceCall.recorder?.state === 'recording') voiceCall.recorder.stop();
+  voiceCall.stream?.getTracks().forEach((t) => t.stop());
+  voiceCall.audioCtx?.close();
+  callEls.overlay.classList.add('hidden');
+}
+
+callEls.btn.addEventListener('click', startVoiceCall);
+callEls.endBtn.addEventListener('click', endVoiceCall);
+callEls.interruptBtn.addEventListener('click', () => {
+  stopSpeaking();
+  if (state.streaming) state.abort?.abort();
+  startListening();
+});

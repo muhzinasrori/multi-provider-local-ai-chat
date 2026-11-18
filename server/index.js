@@ -129,6 +129,35 @@ app.post('/api/upload', upload.array('files', 10), (req, res) => {
   res.json({ attachments: out });
 });
 
+const audioUpload = multer({ storage: multer.memoryStorage() });
+
+app.post('/api/transcribe', audioUpload.single('audio'), async (req, res) => {
+  try {
+    const apiKey = (process.env.TTS_API_KEY || '').trim();
+    const baseUrl = (process.env.TTS_BASE_URL).trim().replace(/\/+$/, '');
+
+    if (!apiKey) return res.status(400).json({ error: 'TTS_API_KEY belum diisi di .env' });
+    if (!req.file) return res.status(400).json({ error: 'Audio kosong' });
+
+    const fd = new FormData();
+    fd.append('file', new Blob([req.file.buffer], { type: req.file.mimetype }), 'voice.webm');
+    fd.append('model', 'whisper-large-v3-turbo');
+    fd.append('prompt', 'Percakapan santai dalam Bahasa Indonesia dan English.');
+
+    const sttRes = await fetch(`${baseUrl}/audio/transcriptions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: fd,
+    });
+
+    const data = await sttRes.json();
+    if (!sttRes.ok) throw new Error(data.error?.message || 'Gagal transkripsi');
+    res.json({ text: data.text || '' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Chat dengan streaming SSE ─────────────────────────────────────────────
 app.post('/api/chat', async (req, res) => {
   const {
@@ -136,7 +165,8 @@ app.post('/api/chat', async (req, res) => {
     model,
     attachmentIds = [],
     regenerate = false,
-    thinking = false
+    thinking = false,
+    voiceMode = false,
   } = req.body || {};
 
   const found = findModel(String(model || ''));
@@ -173,10 +203,14 @@ app.post('/api/chat', async (req, res) => {
   for (const a of attRows) (attByMsg[a.message_id] ||= []).push(a);
 
   const adapterMessages = [];
-  if (config.systemPrompt) {
+  let finalSystemPrompt = config.systemPrompt || '';
+  if (voiceMode) {
+    finalSystemPrompt += '\n[INSTRUKSI MODE TELEPON]: Selalu sesuaikan bahasa jawabanmu dengan bahasa yang digunakan pengguna pada pesan terakhirnya (jika pengguna berbicara bahasa Inggris, jawab dalam bahasa Inggris; jika bahasa Indonesia, jawab dalam bahasa Indonesia). Jawab dengan singkat, santai, dan natural seperti berbicara di telepon (sekitar 50 kata). Hindari tabel, daftar poin panjang, atau format markdown.';
+  }
+  if (finalSystemPrompt.trim()) {
     adapterMessages.push({
       role: 'system',
-      parts: [{ type: 'text', text: config.systemPrompt }],
+      parts: [{ type: 'text', text: finalSystemPrompt.trim() }],
     });
   }
   for (const m of messages) {
